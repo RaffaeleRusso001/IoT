@@ -36,20 +36,7 @@ static void udp_rx_callback(struct simple_udp_connection *c,
                              uint16_t receiver_port,
                              const uint8_t *data,
                              uint16_t datalen) {
-  is_connected = true;  // Riconnessione avvenuta con successo
-  LOG_INFO("Received data: %u from ", *((unsigned*)data));  // Mostra il dato ricevuto
-  LOG_INFO_6ADDR(sender_addr);
-  LOG_INFO_("\n");
-
-  // Invio dei dati accumulati localmente
-  if (next_reading > 0) {
-    for (int i = 0; i < next_reading; i++) {
-      unsigned temperature = readings[i];
-      LOG_INFO("Sending locally batched temperature %u to server\n", temperature);
-      simple_udp_sendto(&udp_conn, &temperature, sizeof(temperature), sender_addr);
-    }
-    next_reading = 0; // Reset del buffer
-  }
+  // non riceve nulla per specificazione
 }
 
 /*---------------------------------------------------------------------------*/
@@ -85,6 +72,7 @@ PROCESS_THREAD(udp_client_process, ev, data) {
     LOG_INFO("Server not reachable yet, will attempt reconnect...\n");
   }
 
+  // Imposta i timer iniziali
   etimer_set(&timer, SEND_INTERVAL);
   etimer_set(&reconnect_timer, CLOCK_SECOND * 10); // Timer di riconnessione periodica
 
@@ -110,7 +98,8 @@ PROCESS_THREAD(udp_client_process, ev, data) {
           }
           LOG_INFO("Accumulating temperature locally: %u\n", temp);
         }
-        etimer_reset(&timer);
+        // Imposta un nuovo timer per la prossima lettura
+        etimer_set(&timer, SEND_INTERVAL);
       }
 
       // Timer di riconnessione
@@ -124,7 +113,8 @@ PROCESS_THREAD(udp_client_process, ev, data) {
             is_connected = true;
           }
         }
-        etimer_reset(&reconnect_timer);
+        // Imposta un nuovo timer per la riconnessione
+        etimer_set(&reconnect_timer, CLOCK_SECOND * 10);
       }
     }
   }
