@@ -36,8 +36,8 @@ udp_rx_callback(struct simple_udp_connection *c,
          const uint8_t *data,
          uint16_t datalen)
 {
-  etimer_stop(&timer);
-  etimer_set(&timer, random_rand() % SEND_INTERVAL);
+  etimer_stop(&periodic_timer);
+  etimer_set(&periodic_timer, random_rand() % SEND_INTERVAL);
   LOG_INFO("CallbackReached!\n");
   if(count>STOP){ 
     LOG_INFO_("Treshold reached!\n");
