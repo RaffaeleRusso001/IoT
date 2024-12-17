@@ -37,23 +37,23 @@ static void udp_rx_callback(struct simple_udp_connection *c,
                              const uint8_t *data,
                              uint16_t datalen) {
   is_connected = true;  // Riconnessione avvenuta con successo
-  LOG_INFO("Received data: %u from ", *((unsigned*)data));  // Mostra il dato ricevuto (temperatura)
+  LOG_INFO("Received data: %u from ", *((unsigned*)data));  // Mostra il dato ricevuto
   LOG_INFO_6ADDR(sender_addr);
   LOG_INFO_("\n");
 
-  // Una volta connessi, inviamo i dati locali accumulati
+  // Invio dei dati accumulati localmente
   if (next_reading > 0) {
     for (int i = 0; i < next_reading; i++) {
       unsigned temperature = readings[i];
       LOG_INFO("Sending locally batched temperature %u to server\n", temperature);
       simple_udp_sendto(&udp_conn, &temperature, sizeof(temperature), sender_addr);
     }
-    next_reading = 0; // Reset delle letture locali
+    next_reading = 0; // Reset del buffer
   }
 }
 
 /*---------------------------------------------------------------------------*/
-// Funzione per inviare letture al server
+// Funzione per inviare una lettura al server
 static void send_temperature_reading(uip_ipaddr_t *dest_ipaddr) {
   unsigned temperature = get_temperature();
   LOG_INFO("Sending temperature %u to server\n", temperature);
@@ -75,48 +75,56 @@ PROCESS_THREAD(udp_client_process, ev, data) {
   // Inizializzazione della connessione UDP
   simple_udp_register(&udp_conn, UDP_CLIENT_PORT, NULL, UDP_SERVER_PORT, udp_rx_callback);
 
+  // Tentativo iniziale di connessione
+  if (NETSTACK_ROUTING.node_is_reachable() && NETSTACK_ROUTING.get_root_ipaddr(&dest_ipaddr)) {
+    LOG_INFO("Connected to server at ");
+    LOG_INFO_6ADDR(&dest_ipaddr);
+    LOG_INFO_("\n");
+    is_connected = true;
+  } else {
+    LOG_INFO("Server not reachable yet, will attempt reconnect...\n");
+  }
+
   etimer_set(&timer, SEND_INTERVAL);
-  etimer_set(&reconnect_timer, CLOCK_SECOND * 10); // Timer di riconnessione
+  etimer_set(&reconnect_timer, CLOCK_SECOND * 10); // Timer di riconnessione periodica
 
   while (1) {
     PROCESS_WAIT_EVENT();
 
     if (ev == PROCESS_EVENT_TIMER) {
       if (etimer_expired(&timer)) {
-        // Se siamo connessi, inviamo la lettura al server
         if (is_connected) {
+          // Se connesso, invia il dato
           send_temperature_reading(&dest_ipaddr);
           count++;
           if (count >= MAX_READINGS) {
             LOG_INFO("Max readings reached, restarting\n");
-            count = 0; // Reset del conteggio
+            count = 0; // Reset conteggio
           }
         } else {
-          // Se non siamo connessi, accumuliamo le letture localmente
+          // Accumula i dati localmente
           unsigned temp = get_temperature();
           readings[next_reading++] = temp;
           if (next_reading >= MAX_READINGS) {
-            next_reading = 0;  // Resetta l'indice se il buffer è pieno
+            next_reading = 0; // Reset del buffer se pieno
           }
           LOG_INFO("Accumulating temperature locally: %u\n", temp);
         }
-
-        // Resetta il timer per inviare la lettura dopo un altro intervallo
         etimer_reset(&timer);
       }
 
-      // Tentativo di riconnessione periodico
+      // Timer di riconnessione
       if (etimer_expired(&reconnect_timer)) {
         if (!is_connected) {
           LOG_INFO("Attempting to reconnect...\n");
           if (NETSTACK_ROUTING.node_is_reachable() && NETSTACK_ROUTING.get_root_ipaddr(&dest_ipaddr)) {
-            LOG_INFO("Attempting to connect to server at ");
+            LOG_INFO("Reconnected to server at ");
             LOG_INFO_6ADDR(&dest_ipaddr);
-            is_connected = true;  // Connesso al server
-            LOG_INFO("Reconnected to server.\n");
+            LOG_INFO_("\n");
+            is_connected = true;
           }
         }
-        etimer_reset(&reconnect_timer);  // Resetta il timer di riconnessione
+        etimer_reset(&reconnect_timer);
       }
     }
   }
