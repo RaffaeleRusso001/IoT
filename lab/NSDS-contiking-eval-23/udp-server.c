@@ -44,12 +44,15 @@
 #define ALERT_THRESHOLD    19
 
 static struct simple_udp_connection udp_conn;
-static unsigned readings[MAX_READINGS];  // Buffer per le letture ricevute
+
+static unsigned readings[MAX_READINGS];
 static unsigned next_reading = 0;
 
 PROCESS(udp_server_process, "UDP server");
 AUTOSTART_PROCESSES(&udp_server_process);
+
 /*---------------------------------------------------------------------------*/
+// Funzione di callback per ricevere i dati dal client
 static void udp_rx_callback(struct simple_udp_connection *c,
                              const uip_ipaddr_t *sender_addr,
                              uint16_t sender_port,
@@ -57,19 +60,20 @@ static void udp_rx_callback(struct simple_udp_connection *c,
                              uint16_t receiver_port,
                              const uint8_t *data,
                              uint16_t datalen) {
-  unsigned reading;
+  unsigned reading = *((unsigned *)data);
+  
+  LOG_INFO("Received temperature %u from ", reading);
+  LOG_INFO_6ADDR(sender_addr);
+  LOG_INFO_("\n");
 
-  // Se il dato ricevuto è una lettura di temperatura
-  reading = *(unsigned *)data;
-
-  // Aggiungi la lettura al buffer
+  // Aggiungi la lettura
   readings[next_reading++] = reading;
   if (next_reading == MAX_READINGS) {
     next_reading = 0;
   }
 
-  // Calcola la media delle letture
-  float average = 0;
+  // Calcola la media
+  float average;
   unsigned sum = 0;
   unsigned count = 0;
   for (int i = 0; i < MAX_READINGS; i++) {
@@ -78,31 +82,30 @@ static void udp_rx_callback(struct simple_udp_connection *c,
       count++;
     }
   }
-
   if (count > 0) {
     average = ((float)sum) / count;
+    LOG_INFO("Current average is %.2f \n", average);
   }
-  LOG_INFO("Current average temperature: %f\n", average);
-  
-  // Se la media è inferiore alla soglia, invia un avviso
-  if (average < ALERT_THRESHOLD) {
-    LOG_INFO("ALERT: Temperature below threshold!\n");
+  else {
+    LOG_INFO("No valid readings yet.\n");
   }
 }
 
 /*---------------------------------------------------------------------------*/
-PROCESS_THREAD(udp_server_process, ev, data)
-{
-  static uint8_t i = 0;
-
+PROCESS_THREAD(udp_server_process, ev, data) {
   PROCESS_BEGIN();
+
+  static uint8_t i = 0;
 
   // Inizializza il buffer delle letture
   for (i = 0; i < MAX_READINGS; i++) {
     readings[i] = 0;
   }
 
-  // Inizializza il server UDP
+  // Avvia la connessione di routing
+  NETSTACK_ROUTING.root_start();
+
+  // Inizializza la connessione UDP
   simple_udp_register(&udp_conn, UDP_SERVER_PORT, NULL, UDP_CLIENT_PORT, udp_rx_callback);
 
   PROCESS_END();

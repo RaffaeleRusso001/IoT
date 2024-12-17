@@ -37,7 +37,19 @@ static void udp_rx_callback(struct simple_udp_connection *c,
                              const uint8_t *data,
                              uint16_t datalen) {
   is_connected = true;  // Riconnessione avvenuta con successo
-  LOG_INFO("Connected to server: %d\n", is_connected);
+  LOG_INFO("Received data: %u from ", *((unsigned*)data));  // Mostra il dato ricevuto (temperatura)
+  LOG_INFO_6ADDR(sender_addr);
+  LOG_INFO_("\n");
+
+  // Una volta connessi, inviamo i dati locali accumulati
+  if (next_reading > 0) {
+    for (int i = 0; i < next_reading; i++) {
+      unsigned temperature = readings[i];
+      LOG_INFO("Sending locally batched temperature %u to server\n", temperature);
+      simple_udp_sendto(&udp_conn, &temperature, sizeof(temperature), sender_addr);
+    }
+    next_reading = 0; // Reset delle letture locali
+  }
 }
 
 /*---------------------------------------------------------------------------*/
@@ -98,15 +110,10 @@ PROCESS_THREAD(udp_client_process, ev, data) {
         if (!is_connected) {
           LOG_INFO("Attempting to reconnect...\n");
           if (NETSTACK_ROUTING.node_is_reachable() && NETSTACK_ROUTING.get_root_ipaddr(&dest_ipaddr)) {
+            LOG_INFO("Attempting to connect to server at ");
+            LOG_INFO_6ADDR(&dest_ipaddr);
             is_connected = true;  // Connesso al server
             LOG_INFO("Reconnected to server.\n");
-            // Invia le letture accumulate localmente
-            for (int i = 0; i < next_reading; i++) {
-              unsigned temperature = readings[i];
-              LOG_INFO("Sending locally batched temperature %u to server\n", temperature);
-              simple_udp_sendto(&udp_conn, &temperature, sizeof(temperature), &dest_ipaddr);
-            }
-            next_reading = 0; // Reset delle letture accumulate
           }
         }
         etimer_reset(&reconnect_timer);  // Resetta il timer di riconnessione
