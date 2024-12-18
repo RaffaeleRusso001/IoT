@@ -39,7 +39,6 @@ PROCESS_THREAD(client_process, ev, data)
       if(dag && dag->preferred_parent) {
         const uip_ipaddr_t *parent_ip = rpl_parent_get_ipaddr(dag->preferred_parent);
         if(parent_ip != NULL) {
-          // Invia solo l'indirizzo del parent (16 byte)
           simple_udp_sendto(&udp_conn, parent_ip, sizeof(uip_ipaddr_t), &root_ip);
           LOG_INFO("Sent parent IP ");
           LOG_INFO_6ADDR(parent_ip);
