@@ -20,11 +20,10 @@ AUTOSTART_PROCESSES(&rpl_client_process);
 
 /* Function to get the IPv6 address of the client's parent */
 static int get_parent_ipaddr(uip_ipaddr_t *parent_ip) {
-  rpl_parent_t *parent = rpl_get_parent_instance()->dag.preferred_parent;
-  if (parent == NULL) {
+  if (curr_instance.dag.preferred_parent == NULL) {
     return 0;  // No parent available
   }
-  uip_ipaddr_copy(parent_ip, rpl_parent_get_ipaddr(parent));
+  uip_ipaddr_copy(parent_ip, rpl_parent_get_ipaddr(curr_instance.dag.preferred_parent));
   return 1;  // Parent found
 }
 
