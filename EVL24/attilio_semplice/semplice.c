@@ -1,7 +1,7 @@
 #include "contiki.h"
-#include "net/routing/rpl-lite/rpl.h"
-#include "net/ipv6/simple-udp.h"
+#include "net/routing/routing.h"
 #include "net/netstack.h"
+#include "net/ipv6/simple-udp.h"
 #include "sys/log.h"
 
 #define LOG_MODULE "RPL Monitor"
@@ -30,15 +30,6 @@ static unsigned current_time = 0;
 PROCESS(rpl_monitor_process, "RPL Monitor");
 AUTOSTART_PROCESSES(&rpl_monitor_process);
 /*---------------------------------------------------------------------------*/
-
-/* Function to configure the RPL root */
-static void configure_rpl_root() {
-  /* Start the RPL root */
-  NETSTACK_ROUTING.root_start();
-
-  /* Log root configuration */
-  LOG_INFO("RPL Root started\n");
-}
 
 /* Function to update or add client information */
 static void update_client(const uip_ipaddr_t *client_ip, const uip_ipaddr_t *parent_ip) {
@@ -103,17 +94,12 @@ PROCESS_THREAD(rpl_monitor_process, ev, data) {
 
   PROCESS_BEGIN();
 
-  /* Initialize clients */
-  for (int i = 0; i < MAX_CLIENTS; i++) {
-    clients[i].last_update = 0;
-  }
-
-  /* Configure RPL root */
-  configure_rpl_root();
+  /* Start the RPL root */
+  NETSTACK_ROUTING.root_start();
+  LOG_INFO("RPL Monitor started as root\n");
 
   /* Initialize UDP connection */
-  simple_udp_register(&udp_conn, UDP_SERVER_PORT, NULL,
-                      UDP_CLIENT_PORT, udp_rx_callback);
+  simple_udp_register(&udp_conn, UDP_SERVER_PORT, NULL, 0, udp_rx_callback);
 
   etimer_set(&timer, REPORT_INTERVAL);
 
