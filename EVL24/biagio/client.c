@@ -2,7 +2,7 @@
 #include "net/routing/routing.h"
 #include "net/netstack.h"
 #include "net/ipv6/simple-udp.h"
-#include "net/routing/rpl-lite/rpl.h"  // Include per accedere alle funzioni RPL
+#include "net/routing/rpl-lite/rpl.h"
 #include "sys/log.h"
 
 #define LOG_MODULE "Client"
@@ -23,7 +23,6 @@ PROCESS_THREAD(client_process, ev, data)
   static struct etimer timer;
   static uint16_t node_id = 0; // ID univoco del nodo
   uip_ipaddr_t root_ip;
-  uip_ipaddr_t parent_ip;
 
   PROCESS_BEGIN();
 
@@ -40,16 +39,18 @@ PROCESS_THREAD(client_process, ev, data)
 
     /* Verifica se il nodo root è raggiungibile */
     if (NETSTACK_ROUTING.node_is_reachable() && NETSTACK_ROUTING.get_root_ipaddr(&root_ip)) {
-      /* Recupera l'indirizzo IPv6 del parent preferito */
+      /* Recupera il DAG corrente */
       rpl_dag_t *dag = rpl_get_any_dag();
       if (dag && dag->preferred_parent) {
-        rpl_parent_get_ipaddr(dag->preferred_parent, &parent_ip);
-
-        /* Invia ID nodo e indirizzo parent al root */
-        uint16_t data[2] = {node_id, parent_ip.u8[15]}; // Invio node_id e ultimo byte dell'IP parent
-        simple_udp_sendto(&udp_conn, data, sizeof(data), &root_ip);
-
-        LOG_INFO("Sent: node %u, parent IP ...:%02x\n", node_id, parent_ip.u8[15]);
+        /* Ottieni l'indirizzo IPv6 del parent */
+        const uip_ipaddr_t *parent_ip = rpl_parent_get_ipaddr(dag->preferred_parent);
+        if (parent_ip != NULL) {
+          uint16_t data[2] = {node_id, parent_ip->u8[15]}; // Invia ID nodo e ultimo byte IP del parent
+          simple_udp_sendto(&udp_conn, data, sizeof(data), &root_ip);
+          LOG_INFO("Sent: node %u, parent IP ...:%02x\n", node_id, parent_ip->u8[15]);
+        } else {
+          LOG_INFO("Parent IP not available\n");
+        }
       } else {
         LOG_INFO("No preferred parent found\n");
       }
