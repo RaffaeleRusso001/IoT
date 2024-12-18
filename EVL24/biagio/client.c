@@ -3,6 +3,8 @@
 #include "net/netstack.h"
 #include "net/ipv6/simple-udp.h"
 #include "net/routing/rpl-lite/rpl.h"
+#include "uip.h"
+#include "uip-ds6.h"
 #include "sys/log.h"
 
 #define LOG_MODULE "Client"
@@ -13,41 +15,35 @@
 
 static struct simple_udp_connection udp_conn;
 
-/*---------------------------------------------------------------------------*/
 PROCESS(client_process, "UDP Client");
 AUTOSTART_PROCESSES(&client_process);
-/*---------------------------------------------------------------------------*/
 
 PROCESS_THREAD(client_process, ev, data)
 {
   static struct etimer timer;
-  static uint16_t node_id = 0; // ID univoco del nodo
   uip_ipaddr_t root_ip;
 
   PROCESS_BEGIN();
 
   LOG_INFO("UDP Client process started\n");
 
-  /* Registra la connessione UDP */
   simple_udp_register(&udp_conn, UDP_CLIENT_PORT, NULL, UDP_SERVER_PORT, NULL);
 
-  /* Imposta il timer per inviare ogni minuto */
   etimer_set(&timer, CLOCK_SECOND * 60);
 
-  while (1) {
+  while(1) {
     PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
 
-    /* Verifica se il nodo root è raggiungibile */
     if (NETSTACK_ROUTING.node_is_reachable() && NETSTACK_ROUTING.get_root_ipaddr(&root_ip)) {
-      /* Recupera il DAG corrente */
       rpl_dag_t *dag = rpl_get_any_dag();
-      if (dag && dag->preferred_parent) {
-        /* Ottieni l'indirizzo IPv6 del parent */
+      if(dag && dag->preferred_parent) {
         const uip_ipaddr_t *parent_ip = rpl_parent_get_ipaddr(dag->preferred_parent);
-        if (parent_ip != NULL) {
-          uint16_t data[2] = {node_id, parent_ip->u8[15]}; // Invia ID nodo e ultimo byte IP del parent
-          simple_udp_sendto(&udp_conn, data, sizeof(data), &root_ip);
-          LOG_INFO("Sent: node %u, parent IP ...:%02x\n", node_id, parent_ip->u8[15]);
+        if(parent_ip != NULL) {
+          // Invia solo l'indirizzo del parent (16 byte)
+          simple_udp_sendto(&udp_conn, parent_ip, sizeof(uip_ipaddr_t), &root_ip);
+          LOG_INFO("Sent parent IP ");
+          LOG_INFO_6ADDR(parent_ip);
+          LOG_INFO_("\n");
         } else {
           LOG_INFO("Parent IP not available\n");
         }
@@ -58,7 +54,7 @@ PROCESS_THREAD(client_process, ev, data)
       LOG_INFO("Root not reachable\n");
     }
 
-    etimer_reset(&timer); // Reset del timer per il prossimo invio
+    etimer_reset(&timer);
   }
 
   PROCESS_END();

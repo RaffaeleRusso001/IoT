@@ -1,7 +1,7 @@
 #include "contiki.h"
 #include "net/routing/rpl-lite/rpl.h"
-#include "net/routing/rpl-lite/rpl-dag.h"
 #include "net/ipv6/simple-udp.h"
+#include "net/netstack.h"
 #include "sys/log.h"
 
 #define LOG_MODULE "RPL Monitor"
@@ -20,7 +20,7 @@ static struct simple_udp_connection udp_conn;
 typedef struct {
   uip_ipaddr_t client_ip;
   uip_ipaddr_t parent_ip;
-  unsigned last_update;
+  unsigned last_update;  // Last update time in minutes
 } client_info_t;
 
 static client_info_t clients[MAX_CLIENTS];
@@ -31,27 +31,16 @@ PROCESS(rpl_monitor_process, "RPL Monitor");
 AUTOSTART_PROCESSES(&rpl_monitor_process);
 /*---------------------------------------------------------------------------*/
 
-/* Configure RPL root */
+/* Function to configure the RPL root */
 static void configure_rpl_root() {
-  uip_ipaddr_t root_ip;
-  uip_create_linklocal_prefix(&root_ip);
-  uip_ds6_set_addr_iid(&root_ip, &uip_lladdr);
+  /* Start the RPL root */
+  NETSTACK_ROUTING.root_start();
 
-  if (!uip_ds6_addr_add(&root_ip, 0, ADDR_AUTOCONF)) {
-    LOG_ERR("Failed to configure root IP address\n");
-    return;
-  }
-
-  /* Initialize RPL DAG root */
-  rpl_dag_root_init();
-  rpl_set_prefix(&root_ip);
-
-  LOG_INFO("RPL Root configured with address ");
-  LOG_INFO_6ADDR(&root_ip);
-  LOG_INFO_("\n");
+  /* Log root configuration */
+  LOG_INFO("RPL Root started\n");
 }
 
-/* Update or add client information */
+/* Function to update or add client information */
 static void update_client(const uip_ipaddr_t *client_ip, const uip_ipaddr_t *parent_ip) {
   for (int i = 0; i < MAX_CLIENTS; i++) {
     if (uip_ipaddr_cmp(&clients[i].client_ip, client_ip)) {
@@ -71,7 +60,7 @@ static void update_client(const uip_ipaddr_t *client_ip, const uip_ipaddr_t *par
   }
 }
 
-/* Remove inactive clients */
+/* Function to remove inactive clients */
 static void remove_inactive_clients() {
   for (int i = 0; i < MAX_CLIENTS; i++) {
     if (clients[i].last_update > 0 && (current_time - clients[i].last_update) >= TIMEOUT_LIMIT) {
@@ -80,7 +69,7 @@ static void remove_inactive_clients() {
   }
 }
 
-/* Print the list of clients */
+/* Function to print the list of clients */
 static void print_clients() {
   LOG_INFO("Client list:\n");
   for (int i = 0; i < MAX_CLIENTS; i++) {
