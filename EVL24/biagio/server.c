@@ -4,18 +4,72 @@
 #include "net/ipv6/simple-udp.h"
 #include "sys/log.h"
 
-#define LOG_MODULE "App"
+#define LOG_MODULE "Monitor"
 #define LOG_LEVEL LOG_LEVEL_INFO
 
 #define UDP_SERVER_PORT 5678
-#define UDP_CLIENT_PORT 8765
+#define TIMEOUT_INTERVAL (3 * 60) // Timeout nodi inattivi in secondi
 
 static struct simple_udp_connection udp_conn;
 
-/*---------------------------------------------------------------------------*/
-PROCESS(udp_server_process, "UDP server");
-AUTOSTART_PROCESSES(&udp_server_process);
-/*---------------------------------------------------------------------------*/
+typedef struct {
+  uint16_t node_id;
+  uint16_t parent_id;
+  clock_time_t last_update;
+} node_info_t;
+
+#define MAX_NODES 50
+static node_info_t node_table[MAX_NODES];
+static int node_count = 0;
+
+/* Aggiunge o aggiorna un nodo nella tabella */
+static void
+update_node(uint16_t node_id, uint16_t parent_id) {
+  for (int i = 0; i < node_count; i++) {
+    if (node_table[i].node_id == node_id) {
+      node_table[i].parent_id = parent_id;
+      node_table[i].last_update = clock_time();
+      return;
+    }
+  }
+
+  if (node_count < MAX_NODES) {
+    node_table[node_count].node_id = node_id;
+    node_table[node_count].parent_id = parent_id;
+    node_table[node_count].last_update = clock_time();
+    node_count++;
+  }
+}
+
+/* Rimuove nodi inattivi */
+static void
+remove_inactive_nodes() {
+  clock_time_t now = clock_time();
+  for (int i = 0; i < node_count; i++) {
+    if ((now - node_table[i].last_update) / CLOCK_SECOND >= TIMEOUT_INTERVAL) {
+      LOG_INFO("Removing inactive node %u\n", node_table[i].node_id);
+      for (int j = i; j < node_count - 1; j++) {
+        node_table[j] = node_table[j + 1];
+      }
+      node_count--;
+      i--; // Rimanere sull'indice corrente
+    }
+  }
+}
+
+/* Stampa la tabella dei nodi */
+static void
+print_node_table() {
+  LOG_INFO("Current node table:\n");
+  for (int i = 0; i < node_count; i++) {
+    LOG_INFO("Node %u, Parent %u, Last update %lu seconds ago\n",
+             node_table[i].node_id, node_table[i].parent_id,
+             (clock_time() - node_table[i].last_update) / CLOCK_SECOND);
+  }
+}
+
+PROCESS(monitor_process, "RPL Monitor");
+AUTOSTART_PROCESSES(&monitor_process);
 
 static void
 udp_rx_callback(struct simple_udp_connection *c,
@@ -26,52 +80,32 @@ udp_rx_callback(struct simple_udp_connection *c,
                 const uint8_t *data,
                 uint16_t datalen)
 {
-  unsigned count;
-  if(datalen == sizeof(count)) {
-    // Converte i dati ricevuti in un intero unsigned
-    count = *(unsigned *)data;
-    LOG_INFO("Server received request %u from ", count);
-    LOG_INFO_6ADDR(sender_addr);
-    LOG_INFO_("\n");
-    
-    // Invia una risposta incrementando il contatore
-    // (opzionale; si può anche restituire lo stesso valore)
-    count++;
-    simple_udp_sendto(c, &count, sizeof(count), sender_addr);
-    LOG_INFO("Server sent response %u\n", count);
-  } else {
-    LOG_INFO("Server received data of unexpected length %u\n", datalen);
+  if (datalen == 4) { // ID nodo + parent = 2 byte ciascuno
+    uint16_t node_id = ((uint16_t *)data)[0];
+    uint16_t parent_id = ((uint16_t *)data)[1];
+    LOG_INFO("Received from node %u, parent %u\n", node_id, parent_id);
+    update_node(node_id, parent_id);
   }
 }
 
-/*---------------------------------------------------------------------------*/
-PROCESS_THREAD(udp_server_process, ev, data)
+PROCESS_THREAD(monitor_process, ev, data)
 {
+  static struct etimer timer;
+
   PROCESS_BEGIN();
 
-  // Impostazione del nodo come root RPL.
-  // Nota: Alcune piattaforme/configurazioni richiedono funzioni specifiche per
-  // l'impostazione del root. Ad esempio:
-  //
-  //  NETSTACK_ROUTING.root_start();
-  //
-  // Questo comando fa sì che il nodo diventi root della DAG RPL.  
-  // Assicurarsi che nel file di progetto o nella configurazione del firmware
-  // siano attive le opportune impostazioni per lanciare la DAG.
-  
-#if ROUTING_CONF_RPL_LITE
   NETSTACK_ROUTING.root_start();
-#else
-  // Se non si utilizza RPL Lite, l'abilitazione del root potrebbe differire.
-  // Consultare la documentazione della versione di Contiki/Contiki-NG in uso.
-#endif
+  simple_udp_register(&udp_conn, UDP_SERVER_PORT, NULL, 0, udp_rx_callback);
+  LOG_INFO("Monitor started\n");
 
-  // Registra una connessione UDP in ascolto sulla porta del server
-  simple_udp_register(&udp_conn, UDP_SERVER_PORT, NULL,
-                      UDP_CLIENT_PORT, udp_rx_callback);
+  etimer_set(&timer, CLOCK_SECOND * 60);
 
-  LOG_INFO("UDP server started on port %u\n", UDP_SERVER_PORT);
-  
+  while (1) {
+    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
+    remove_inactive_nodes();
+    print_node_table();
+    etimer_reset(&timer);
+  }
+
   PROCESS_END();
 }
-/*---------------------------------------------------------------------------*/
