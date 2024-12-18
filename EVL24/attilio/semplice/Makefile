@@ -1,4 +1,4 @@
-CONTIKI_PROJECT = semplice
+CONTIKI_PROJECT = semplice client
 all: $(CONTIKI_PROJECT)
 
 CONTIKI=../..
