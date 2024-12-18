@@ -1,7 +1,7 @@
 #include "contiki.h"
 #include "net/routing/rpl-lite/rpl.h"
+#include "net/routing/rpl-lite/rpl-dag.h"
 #include "net/ipv6/simple-udp.h"
-#include "net/netstack.h"
 #include "sys/log.h"
 
 #define LOG_MODULE "RPL Monitor"
@@ -20,7 +20,7 @@ static struct simple_udp_connection udp_conn;
 typedef struct {
   uip_ipaddr_t client_ip;
   uip_ipaddr_t parent_ip;
-  unsigned last_update;  // Last update time in minutes
+  unsigned last_update;
 } client_info_t;
 
 static client_info_t clients[MAX_CLIENTS];
@@ -31,12 +31,9 @@ PROCESS(rpl_monitor_process, "RPL Monitor");
 AUTOSTART_PROCESSES(&rpl_monitor_process);
 /*---------------------------------------------------------------------------*/
 
-/* Function to configure the RPL root */
+/* Configure RPL root */
 static void configure_rpl_root() {
   uip_ipaddr_t root_ip;
-  rpl_prefix_t prefix;
-
-  /* Create a link-local address for the root */
   uip_create_linklocal_prefix(&root_ip);
   uip_ds6_set_addr_iid(&root_ip, &uip_lladdr);
 
@@ -45,22 +42,16 @@ static void configure_rpl_root() {
     return;
   }
 
-  /* Set the RPL DAG root and configure the prefix */
+  /* Initialize RPL DAG root */
   rpl_dag_root_init();
-  uip_ip6addr_copy(&prefix.prefix, &root_ip);
-  prefix.length = 64;
-
-  if (!rpl_set_prefix(&prefix)) {
-    LOG_ERR("Failed to set RPL prefix\n");
-    return;
-  }
+  rpl_set_prefix(&root_ip);
 
   LOG_INFO("RPL Root configured with address ");
   LOG_INFO_6ADDR(&root_ip);
   LOG_INFO_("\n");
 }
 
-/* Function to update or add client information */
+/* Update or add client information */
 static void update_client(const uip_ipaddr_t *client_ip, const uip_ipaddr_t *parent_ip) {
   for (int i = 0; i < MAX_CLIENTS; i++) {
     if (uip_ipaddr_cmp(&clients[i].client_ip, client_ip)) {
@@ -80,7 +71,7 @@ static void update_client(const uip_ipaddr_t *client_ip, const uip_ipaddr_t *par
   }
 }
 
-/* Function to remove inactive clients */
+/* Remove inactive clients */
 static void remove_inactive_clients() {
   for (int i = 0; i < MAX_CLIENTS; i++) {
     if (clients[i].last_update > 0 && (current_time - clients[i].last_update) >= TIMEOUT_LIMIT) {
@@ -89,7 +80,7 @@ static void remove_inactive_clients() {
   }
 }
 
-/* Function to print the list of clients */
+/* Print the list of clients */
 static void print_clients() {
   LOG_INFO("Client list:\n");
   for (int i = 0; i < MAX_CLIENTS; i++) {
@@ -108,4 +99,43 @@ static void udp_rx_callback(struct simple_udp_connection *c,
          const uip_ipaddr_t *sender_addr, uint16_t sender_port,
          const uip_ipaddr_t *receiver_addr, uint16_t receiver_port,
          const uint8_t *data, uint16_t datalen) {
-  if (
+  if (datalen != sizeof(uip_ipaddr_t)) {
+    return;
+  }
+
+  uip_ipaddr_t parent_ip;
+  memcpy(&parent_ip, data, sizeof(uip_ipaddr_t));
+  update_client(sender_addr, &parent_ip);
+}
+
+/*---------------------------------------------------------------------------*/
+PROCESS_THREAD(rpl_monitor_process, ev, data) {
+  static struct etimer timer;
+
+  PROCESS_BEGIN();
+
+  /* Initialize clients */
+  for (int i = 0; i < MAX_CLIENTS; i++) {
+    clients[i].last_update = 0;
+  }
+
+  /* Configure RPL root */
+  configure_rpl_root();
+
+  /* Initialize UDP connection */
+  simple_udp_register(&udp_conn, UDP_SERVER_PORT, NULL,
+                      UDP_CLIENT_PORT, udp_rx_callback);
+
+  etimer_set(&timer, REPORT_INTERVAL);
+
+  while (1) {
+    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
+
+    current_time++;
+    remove_inactive_clients();
+    print_clients();
+    etimer_reset(&timer);
+  }
+
+  PROCESS_END();
+}
