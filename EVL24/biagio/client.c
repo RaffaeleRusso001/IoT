@@ -18,13 +18,15 @@ AUTOSTART_PROCESSES(&client_process);
 PROCESS_THREAD(client_process, ev, data)
 {
   static struct etimer timer;
-  static uint16_t node_id = 0; // ID univoco del nodo
+  static uint16_t node_id = 1; // ID univoco del nodo
   uip_ipaddr_t root_ip;
 
   PROCESS_BEGIN();
 
+  // Registrazione connessione UDP
   simple_udp_register(&udp_conn, UDP_CLIENT_PORT, NULL, UDP_SERVER_PORT, NULL);
 
+  // Imposta il timer per 60 secondi
   etimer_set(&timer, CLOCK_SECOND * 60);
 
   while (1) {
@@ -32,7 +34,10 @@ PROCESS_THREAD(client_process, ev, data)
 
     if (NETSTACK_ROUTING.node_is_reachable() &&
         NETSTACK_ROUTING.get_root_ipaddr(&root_ip)) {
-      uint16_t parent_id = NETSTACK_ROUTING.get_next_hop();
+      // Ottieni il next hop (verifica che l'API esista nella tua versione)
+      const linkaddr_t *parent = NETSTACK_ROUTING.get_nexthop();
+      uint16_t parent_id = parent ? parent->u8[7] : 0; // Usa l'ultima parte dell'indirizzo come ID
+
       uint16_t data[2] = {node_id, parent_id};
 
       simple_udp_sendto(&udp_conn, data, sizeof(data), &root_ip);

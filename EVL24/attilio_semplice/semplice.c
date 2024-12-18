@@ -93,10 +93,15 @@ PROCESS_THREAD(rpl_monitor_process, ev, data) {
 
   PROCESS_BEGIN();
 
+  /* Initialize clients */
   for (int i = 0; i < MAX_CLIENTS; i++) {
     clients[i].last_update = 0;
   }
 
+  /* Initialize DAG root */
+  NETSTACK_ROUTING.root_start();
+
+  /* Initialize UDP connection */
   simple_udp_register(&udp_conn, UDP_SERVER_PORT, NULL,
                       UDP_CLIENT_PORT, udp_rx_callback);
 
