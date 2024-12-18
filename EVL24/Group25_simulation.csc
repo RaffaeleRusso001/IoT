@@ -23,7 +23,7 @@
       org.contikios.cooja.contikimote.ContikiMoteType
       <identifier>mtype185</identifier>
       <description>Monitor</description>
-      <source>[CONFIG_DIR]/../Downloads/IoT/EVL24/biagio/server.c</source>
+      <source>[CONFIG_DIR]/../Downloads/IoT/EVL24/server.c</source>
       <commands>make server.cooja TARGET=cooja</commands>
       <moteinterface>org.contikios.cooja.interfaces.Position</moteinterface>
       <moteinterface>org.contikios.cooja.interfaces.Battery</moteinterface>
@@ -48,7 +48,7 @@
       org.contikios.cooja.contikimote.ContikiMoteType
       <identifier>mtype515</identifier>
       <description>Clients</description>
-      <source>[CONFIG_DIR]/../Downloads/IoT/EVL24/biagio/client.c</source>
+      <source>[CONFIG_DIR]/../Downloads/IoT/EVL24/client.c</source>
       <commands>make client.cooja TARGET=cooja</commands>
       <moteinterface>org.contikios.cooja.interfaces.Position</moteinterface>
       <moteinterface>org.contikios.cooja.interfaces.Battery</moteinterface>
@@ -288,4 +288,3 @@
     <location_y>0</location_y>
   </plugin>
 </simconf>
-
