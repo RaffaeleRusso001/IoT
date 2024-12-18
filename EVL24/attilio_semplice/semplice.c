@@ -33,13 +33,20 @@ AUTOSTART_PROCESSES(&rpl_monitor_process);
 
 /* Function to configure the RPL root */
 static void configure_rpl_root() {
-  if (!NETSTACK_ROUTING.node_is_reachable()) {
-    LOG_WARN("Node is not reachable. Initializing root...\n");
-  }
   uip_ipaddr_t root_ip;
-  NETSTACK_ROUTING.get_root_ipaddr(&root_ip);  // Use the documented method
-  LOG_INFO("RPL Root address: ");
+  uip_create_linklocal_prefix(&root_ip);
+  uip_ds6_set_addr_iid(&root_ip, &uip_lladdr);
+
+  if (!uip_ds6_addr_add(&root_ip, 0, ADDR_AUTOCONF)) {
+    LOG_ERR("Failed to configure root IP address\n");
+    return;
+  }
+
+  rpl_set_root(RPL_DEFAULT_INSTANCE, &root_ip);
+  rpl_set_prefix(RPL_DEFAULT_INSTANCE, &root_ip, 64);
+  LOG_INFO("RPL Root configured with address ");
   LOG_INFO_6ADDR(&root_ip);
+  LOG_INFO_("\n");
 }
 
 /* Function to update or add client information */
